@@ -44,6 +44,60 @@
 
   .field-tip { margin: 0 0 10px; font-size: 12.5px; color: var(--text-dim); }
 
+  .precise-toggle {
+    display: block;
+    background: none;
+    border: none;
+    color: var(--cyan);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 0;
+    margin-top: 14px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--cyan-dim);
+  }
+  .precise-toggle:hover { text-decoration-color: var(--cyan); }
+
+  .precise-mode {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    opacity: 0;
+  }
+  .precise-mode.reveal { animation: reveal-up 0.35s ease forwards; }
+  .precise-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .precise-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--text-dim); }
+  .precise-grid select,
+  .precise-grid input[type="number"] {
+    background: #050810;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .precise-grid select:focus,
+  .precise-grid input:focus { outline: none; border-color: var(--cyan-dim); }
+
+  .yn-group { display: flex; gap: 8px; }
+  .yn-btn {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .yn-btn:hover { border-color: var(--cyan-dim); }
+  .yn-btn.active { border-color: var(--cyan-dim); color: var(--cyan); background: rgba(77, 217, 232, 0.08); }
+
   textarea {
     width: 100%;
     min-height: 120px;
@@ -105,6 +159,29 @@
   }
   button.secondary:hover { border-color: var(--cyan-dim); color: var(--cyan); background: rgba(77, 217, 232, 0.06); }
   .export-row { display: flex; justify-content: center; margin-top: 4px; }
+
+  .disclaimer {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    text-align: center;
+    margin: 20px 0 0;
+    line-height: 1.6;
+  }
+
+  .fy-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: rgba(140, 155, 181, 0.1);
+    border: 1px solid var(--border);
+    padding: 2px 9px;
+    border-radius: 999px;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+    margin-left: 6px;
+    text-transform: none;
+  }
 
   #error {
     display: none;
@@ -255,6 +332,66 @@
         <button class="chip" data-example="We run a small roadside tea and snacks stall in a village in Himachal Pradesh. Daily sales are around 2000 rupees and daily expenses are about 2,200 rupees on ingredients and gas, all cash. Just me and my brother.">Roadside tea stall</button>
         <button class="chip" data-example="I run a small manufacturing unit making plastic packaging in Pune with 8 workers, machinery worth about 40 lakh rupees, and annual turnover of 1.8 crore. Total annual expenses are about 1.2 crore.">Small manufacturer</button>
       </div>
+
+      <button type="button" class="precise-toggle" id="preciseToggle">Prefer exact numbers? Switch to precise mode.</button>
+
+      <div class="precise-mode" id="preciseMode" hidden>
+        <div class="precise-grid">
+          <label>
+            <span>Financial year</span>
+            <select id="preciseFinancialYear">
+              <option value="">Select…</option>
+            </select>
+          </label>
+          <label>
+            <span>Business type</span>
+            <select id="preciseBusinessType">
+              <option value="">Select…</option>
+            </select>
+          </label>
+          <label>
+            <span>Business location</span>
+            <select id="preciseState">
+              <option value="">Select…</option>
+            </select>
+          </label>
+          <label>
+            <span>Annual gross turnover/receipts (₹)</span>
+            <input type="number" id="preciseRevenue" min="0" step="1000" placeholder="e.g. 500000" />
+          </label>
+          <label>
+            <span>Annual expenses (₹)</span>
+            <input type="number" id="preciseExpenses" min="0" step="1000" placeholder="e.g. 200000" />
+          </label>
+          <label>
+            <span>Number of employees</span>
+            <input type="number" id="preciseEmployees" min="0" step="1" placeholder="0" />
+          </label>
+          <label>
+            <span>Years operating</span>
+            <input type="number" id="preciseYears" min="0" step="1" placeholder="0" />
+          </label>
+          <label>
+            <span>Cash receipts as % of total receipts</span>
+            <input type="number" id="preciseCashPercent" min="0" max="100" step="1" placeholder="e.g. 60" />
+          </label>
+          <label>
+            <span>Inter-state sales/services?</span>
+            <div class="yn-group" id="preciseInterState">
+              <button type="button" class="yn-btn" data-value="yes">Yes</button>
+              <button type="button" class="yn-btn active" data-value="no">No</button>
+            </div>
+          </label>
+          <label>
+            <span>Sell through e-commerce (Amazon, Flipkart, etc.)?</span>
+            <div class="yn-group" id="preciseEcommerce">
+              <button type="button" class="yn-btn" data-value="yes">Yes</button>
+              <button type="button" class="yn-btn active" data-value="no">No</button>
+            </div>
+          </label>
+        </div>
+      </div>
+
       <div class="row">
         <button class="primary" id="submitBtn">Get My Advisory →</button>
       </div>
@@ -269,7 +406,7 @@
 
     <div id="results">
       <div class="panel">
-        <div class="section-label">Plain-Language Summary</div>
+        <div class="section-label">Plain-Language Summary <span class="fy-badge" id="fyBadge"></span></div>
         <div class="summary-text" id="summaryText"></div>
       </div>
 
@@ -279,13 +416,15 @@
       </div>
 
       <div class="panel">
-        <div class="section-label">Benefits You'd Unlock</div>
+        <div class="section-label">Potential Benefits and Schemes</div>
         <div class="benefit-grid" id="benefitGrid"></div>
       </div>
 
       <div class="export-row">
         <button class="secondary" id="exportPdfBtn">Export as PDF</button>
       </div>
+
+      <p class="disclaimer" id="disclaimerText"></p>
     </div>
   </div>
 

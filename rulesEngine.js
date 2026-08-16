@@ -10,13 +10,6 @@ const SPECIAL_CATEGORY_STATES = new Set([
   "jammu and kashmir",
 ]);
 
-function inr(n) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "N/A";
-  const rounded = Math.round(n);
-  const sign = rounded < 0 ? "-" : "";
-  return sign + "₹" + Math.abs(rounded).toLocaleString("en-IN");
-}
-
 function resolveSpecialCategory(profile) {
   if (typeof profile.isSpecialCategoryState === "boolean") {
     return profile.isSpecialCategoryState;
@@ -35,28 +28,41 @@ function determineGST(profile) {
       ? (special ? 2000000 : 4000000)
       : (special ? 1000000 : 2000000);
 
-  const required = turnover > threshold;
+  // Sec 24 CGST Act: inter-state supply and e-commerce sales require GST
+  // registration regardless of turnover, and composition scheme is not
+  // available to either — so both override the threshold check below.
+  const mandatoryReason = profile.isInterState
+    ? "you make inter-state sales/services"
+    : profile.sellsOnEcommerce
+    ? "you sell through an e-commerce operator"
+    : null;
+  const compositionBlocked = !!mandatoryReason;
+
+  const required = turnover > threshold || compositionBlocked;
 
   let scheme = null;
   if (required) {
     if (profile.isProfessional || sector === "services") {
       const compositionCap = 5000000; // Sec 10(2A) composition for services
-      if (turnover <= compositionCap) {
+      if (!compositionBlocked && turnover <= compositionCap) {
         scheme = { type: "composition", rate: "6% of turnover (3% CGST + 3% SGST)", note: "Composition scheme for services (Sec 10(2A)) — no input tax credit, cannot collect GST from customers." };
       } else {
         scheme = { type: "regular", rate: "Depends on SAC classification of the service", note: "Regular scheme — file monthly/quarterly returns, can claim input tax credit." };
       }
     } else {
       const compositionCap = special ? 7500000 : 15000000;
-      if (turnover <= compositionCap) {
+      if (!compositionBlocked && turnover <= compositionCap) {
         scheme = { type: "composition", rate: "1% of turnover (traders/manufacturers)", note: "Composition scheme for goods — flat rate, no input tax credit, cannot sell inter-state." };
       } else {
         scheme = { type: "regular", rate: "Depends on HSN classification of goods", note: "Regular scheme — file monthly/quarterly returns, can claim input tax credit." };
       }
     }
+    if (compositionBlocked) {
+      scheme.note = `Composition scheme isn't available because ${mandatoryReason} — regular scheme is mandatory here. ` + scheme.note;
+    }
   }
 
-  return { required, threshold, special, scheme };
+  return { required, threshold, special, scheme, mandatoryReason };
 }
 
 const NEW_REGIME_SLABS = [
@@ -232,45 +238,24 @@ function determineBenefits(profile, udyam) {
   return benefits;
 }
 
+// Short, numberless plain-English framing. The actual figures (revenue,
+// GST threshold, deemed profit, net profit, tax owed) already live in their
+// own cards below — this is interpretation, not a second copy of the data.
 function buildSummary(profile, gst, incomeTax, udyam) {
-  const lines = [];
-  lines.push(
-    `Based on your description, this looks like a ${profile.sector === "both" ? "goods & services" : profile.sector} business ` +
-    `(${profile.businessType || "unspecified type"}) with an estimated annual turnover of ${inr(profile.estimatedAnnualTurnoverINR)}.`
-  );
+  const businessLabel = profile.businessType || "small business";
 
-  if (gst.required) {
-    lines.push(
-      `GST registration is required — your turnover is above the ₹${(gst.threshold / 100000).toLocaleString("en-IN")} lakh threshold` +
-      `${gst.special ? " (special category state)" : ""}. ` +
-      (gst.scheme ? `Recommended scheme: ${gst.scheme.type === "composition" ? "Composition Scheme" : "Regular Scheme"} (${gst.scheme.rate}).` : "")
-    );
-  } else {
-    lines.push(`GST registration is not mandatory yet — your turnover is below the ₹${(gst.threshold / 100000).toLocaleString("en-IN")} lakh threshold. You can still register voluntarily to claim input tax credit or sell inter-state.`);
-  }
+  const gstSentence = gst.required
+    ? gst.mandatoryReason
+      ? `As a ${businessLabel}, you need GST registration — it's mandatory because ${gst.mandatoryReason}, regardless of turnover.`
+      : `As a ${businessLabel}, you need GST registration.`
+    : `As a ${businessLabel}, you don't need GST registration yet.`;
 
-  if (incomeTax.inLoss) {
-    lines.push(
-      `Your estimated annual expenses (${inr(profile.estimatedAnnualExpensesINR)}) meet or exceed your turnover, ` +
-      `for a net profit of ${inr(incomeTax.netProfit)}. Your business is in loss so no tax for this cycle.`
-    );
-  } else {
-    lines.push(
-      `Your estimated net profit for the year is ${inr(incomeTax.netProfit)}. ` +
-      `You're eligible for presumptive taxation under Section ${incomeTax.section} ` +
-      `(deemed profit: ${incomeTax.deemedProfitRate}, ≈ ${inr(incomeTax.deemedProfit)}). ` +
-      `Estimated income tax liability: ${inr(incomeTax.estimatedTax)} under the new regime (before any other income/deductions).`
-    );
-  }
+  const udyamSentence =
+    udyam.classification === "Not classified as MSME"
+      ? "Your scale is above MSME thresholds, so Udyam-specific benefits don't apply — see what else you unlock below."
+      : `You're classified as a ${udyam.classification} enterprise, which unlocks the benefits below.`;
 
-  lines.push(
-    `Your business classifies as a ${udyam.classification} enterprise under Udyam. ` +
-    (udyam.classification !== "Not classified as MSME"
-      ? "Registering on the Udyam portal (free, ~10 minutes) unlocks the benefits listed below."
-      : "You're above MSME thresholds, so Udyam-specific benefits don't apply.")
-  );
-
-  return lines.join(" ");
+  return `${gstSentence} ${udyamSentence}`;
 }
 
 export function computeAdvisory(profile) {
@@ -288,8 +273,7 @@ export function computeAdvisory(profile) {
     benefits,
     summary,
     disclaimer:
-      "Illustrative estimate for a hackathon prototype, based on publicly known GST/Income-Tax/MSME rules. " +
-      "Thresholds and rates change with each Union Budget — verify current figures on the GST portal, CBDT " +
-      "notifications, and udyamregistration.gov.in before making any filing or business decision.",
+      "This is an informational estimate and is not a substitute for professional tax, legal, or accounting " +
+      "advice. Consult a qualified professional before making financial decisions.",
   };
 }

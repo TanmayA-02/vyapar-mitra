@@ -8,13 +8,18 @@
 // compute a real advisory — callers should ask the user to clarify rather
 // than guessing a number or a business category on their behalf.
 
-const SPECIAL_CATEGORY_STATES = new Set([
+// Exported so server.js can build precise-mode dropdown options and validate
+// precise-mode submissions against the exact same vocabulary the free-text
+// extractor uses — the two input paths must agree on what a "business type"
+// or a "state" is, or they wouldn't reliably produce the same advisory for
+// equivalent input.
+export const SPECIAL_CATEGORY_STATES = new Set([
   "arunachal pradesh", "assam", "manipur", "meghalaya", "mizoram",
   "nagaland", "sikkim", "tripura", "himachal pradesh", "uttarakhand",
   "jammu and kashmir",
 ]);
 
-const STATE_NAMES = [
+export const STATE_NAMES = [
   "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh",
   "goa", "gujarat", "haryana", "himachal pradesh", "jharkhand", "karnataka",
   "kerala", "madhya pradesh", "maharashtra", "manipur", "meghalaya",
@@ -52,7 +57,7 @@ const URBAN_HINTS = ["city", "urban", "town", "metro"];
 const RURAL_HINTS = ["village", "rural", "gram panchayat", "gaon", "hamlet"];
 
 // [keywords], label, sector, isProfessional
-const BUSINESS_TYPES = [
+export const BUSINESS_TYPES = [
   { keywords: ["tailor", "tailoring", "stitching", "boutique", "alteration"], label: "Tailoring / boutique", sector: "services", isProfessional: false },
   { keywords: ["kirana", "grocery", "provision store", "general store"], label: "Grocery / kirana store", sector: "goods", isProfessional: false },
   { keywords: ["tea stall", "chai stall", "snack", "food cart", "dhaba", "street food", "vendor", "hawker"], label: "Street food / vendor stall", sector: "goods", isProfessional: false },
@@ -213,6 +218,19 @@ function findDigitalReceiptsPercent(text, businessType) {
   return 40; // typical informal-sector default
 }
 
+// Sec 24 CGST Act triggers — both make GST registration mandatory regardless
+// of turnover, so the rules engine needs to know about them even from free
+// text. Kept deliberately narrow (named platforms, not "sell online" broadly)
+// since a business's own website doesn't trigger this, only selling through
+// a third-party e-commerce operator does.
+function findInterState(text) {
+  return /\binter-?state\b|\bacross states\b|\bship (?:to|across) (?:other )?states\b|\bpan-?india\b|\ball over india\b|\ball across india\b/.test(text);
+}
+
+function findEcommerce(text) {
+  return /\be-?commerce\b|\bonline marketplace\b|\bamazon\b|\bflipkart\b|\bmeesho\b|\bmyntra\b|\bswiggy\b|\bzomato\b|\bthrough (?:an? )?online (?:platform|marketplace)\b/.test(text);
+}
+
 // Fields the rest of the pipeline cannot safely guess. If either is missing,
 // extractProfile() returns them in `missing` instead of inventing a number
 // or a business category, so the caller can ask the user to clarify rather
@@ -289,6 +307,9 @@ export function extractProfile(description) {
     inferred.push(`payment mode not mentioned — assumed ${digitalReceiptsPercent}% digital receipts`);
   }
 
+  const isInterState = findInterState(text);
+  const sellsOnEcommerce = findEcommerce(text);
+
   const confidenceNotes =
     "Extracted via rule-based keyword matching (no LLM/API used). " +
     (inferred.length ? inferred.join("; ") + "." : "All fields matched explicit keywords in the description.");
@@ -305,8 +326,11 @@ export function extractProfile(description) {
       category,
       areaType,
       employeeCount,
+      yearsOperating: 0, // not parsed from free text yet — precise mode collects this explicitly
       estimatedInvestmentINR,
       digitalReceiptsPercent,
+      isInterState,
+      sellsOnEcommerce,
       confidenceNotes,
     },
     missing: [],

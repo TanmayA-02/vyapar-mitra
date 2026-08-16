@@ -4,12 +4,87 @@ const errorEl = document.getElementById("error");
 const loadingEl = document.getElementById("loading");
 const resultsEl = document.getElementById("results");
 
+const preciseToggle = document.getElementById("preciseToggle");
+const preciseMode = document.getElementById("preciseMode");
+const preciseFinancialYear = document.getElementById("preciseFinancialYear");
+const preciseBusinessType = document.getElementById("preciseBusinessType");
+const preciseState = document.getElementById("preciseState");
+const preciseRevenue = document.getElementById("preciseRevenue");
+const preciseExpenses = document.getElementById("preciseExpenses");
+const preciseEmployees = document.getElementById("preciseEmployees");
+const preciseYears = document.getElementById("preciseYears");
+const preciseCashPercent = document.getElementById("preciseCashPercent");
+const preciseInterState = document.getElementById("preciseInterState");
+const preciseEcommerce = document.getElementById("preciseEcommerce");
+
+// Yes/No toggle groups — clicking a button makes it the sole active one in
+// its group. Defaults to "No" for both (set via the `active` class in HTML).
+function ynValue(group) {
+  return group.querySelector(".yn-btn.active")?.dataset.value === "yes";
+}
+[preciseInterState, preciseEcommerce].forEach((group) => {
+  group.querySelectorAll(".yn-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      group.querySelectorAll(".yn-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+});
+
 document.querySelectorAll(".chip").forEach((chip) => {
   chip.addEventListener("click", () => {
     descriptionEl.value = chip.dataset.example;
     descriptionEl.focus();
   });
 });
+
+// Precise mode is collapsed by default — free text stays the primary input.
+// Toggling it open/closed determines which payload submit() sends.
+preciseToggle.addEventListener("click", () => {
+  const opening = preciseMode.hidden;
+  if (opening) {
+    preciseMode.hidden = false;
+    preciseMode.classList.remove("reveal");
+    void preciseMode.offsetWidth;
+    preciseMode.classList.add("reveal");
+    preciseToggle.textContent = "Using precise mode. Switch back to free text.";
+  } else {
+    preciseMode.hidden = true;
+    preciseToggle.textContent = "Prefer exact numbers? Switch to precise mode.";
+  }
+});
+
+async function loadFormOptions() {
+  try {
+    const res = await fetch("/api/form-options");
+    const data = await res.json();
+
+    data.businessTypes.forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.label;
+      preciseBusinessType.appendChild(opt);
+    });
+
+    data.states.forEach((s) => {
+      const opt = document.createElement("option");
+      opt.value = s.value;
+      opt.textContent = s.label + (s.special ? " (special category)" : "");
+      preciseState.appendChild(opt);
+    });
+
+    data.financialYears.forEach((fy) => {
+      const opt = document.createElement("option");
+      opt.value = fy;
+      opt.textContent = `FY ${fy}`;
+      preciseFinancialYear.appendChild(opt);
+    });
+    preciseFinancialYear.value = data.currentFinancialYear;
+  } catch (err) {
+    console.error("Failed to load precise-mode dropdown options:", err);
+  }
+}
+loadFormOptions();
 
 function inr(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return "N/A";
@@ -86,7 +161,7 @@ function renderStatGrid(data) {
   netProfitCard.className = "stat-card";
   netProfitCard.innerHTML = `
     ${fieldTitle(ICONS.netProfit, "Net Profit (est.)")}
-    <div class="stat-value ${data.incomeTax.netProfit > 0 ? "pos" : "neg"}">${inr(data.incomeTax.netProfit)}</div>
+    <div class="stat-value">${inr(data.incomeTax.netProfit)}</div>
     <div class="stat-detail">Revenue minus expenses — determines whether income tax applies this cycle.</div>`;
   grid.appendChild(netProfitCard);
 
@@ -96,6 +171,7 @@ function renderStatGrid(data) {
     ${fieldTitle(ICONS.gst, "GST Registration")}
     <span class="status-pill ${data.gst.required ? "amber" : "green"}">${data.gst.required ? "Registration Required" : "Not Required Yet"}</span>
     <div class="stat-detail">
+      ${data.gst.mandatoryReason ? `Mandatory because ${data.gst.mandatoryReason}, regardless of turnover.<br/>` : ""}
       Threshold: ${inr(data.gst.threshold)}${data.gst.special ? " (special category state)" : ""}.
       ${data.gst.scheme ? `Suggested scheme: ${data.gst.scheme.type === "composition" ? "Composition" : "Regular"} — ${data.gst.scheme.rate}.` : "Voluntary registration still possible for input tax credit."}
     </div>`;
@@ -121,7 +197,7 @@ function renderStatGrid(data) {
   udyamCard.className = "stat-card";
   udyamCard.innerHTML = `
     ${fieldTitle(ICONS.udyam, "MSME / Udyam Classification")}
-    <div class="stat-value ${data.udyam.classification === "Not classified as MSME" ? "neg" : "pos"}">${data.udyam.classification}</div>
+    <div class="stat-value pos">${data.udyam.classification}</div>
     <div class="stat-detail">
       Based on estimated investment ${inr(data.udyam.investment)} and turnover ${inr(data.udyam.turnover)}.
     </div>`;
@@ -146,11 +222,62 @@ function renderBenefits(benefits) {
   });
 }
 
+// Precise mode's own required-field check — mirrors the server-side
+// validation in buildPreciseProfile(), so the user sees the same complaint
+// instantly instead of waiting on a round trip for something checkable here.
+function buildPrecisePayload() {
+  const businessTypeId = preciseBusinessType.value;
+  if (!businessTypeId) return { error: "Please choose a business type." };
+
+  const state = preciseState.value;
+  if (!state) return { error: "Please choose a business location." };
+
+  if (preciseRevenue.value === "" || Number(preciseRevenue.value) < 0) {
+    return { error: "Please enter a valid annual revenue." };
+  }
+  if (preciseExpenses.value === "" || Number(preciseExpenses.value) < 0) {
+    return { error: "Please enter valid annual expenses." };
+  }
+  if (preciseCashPercent.value !== "" && (Number(preciseCashPercent.value) < 0 || Number(preciseCashPercent.value) > 100)) {
+    return { error: "Cash receipts % must be between 0 and 100." };
+  }
+
+  return {
+    body: {
+      mode: "precise",
+      financialYear: preciseFinancialYear.value,
+      businessTypeId,
+      state,
+      estimatedAnnualTurnoverINR: Number(preciseRevenue.value),
+      estimatedAnnualExpensesINR: Number(preciseExpenses.value),
+      employeeCount: preciseEmployees.value === "" ? 0 : Number(preciseEmployees.value),
+      yearsOperating: preciseYears.value === "" ? 0 : Number(preciseYears.value),
+      cashReceiptsPercent: preciseCashPercent.value === "" ? null : Number(preciseCashPercent.value),
+      isInterState: ynValue(preciseInterState),
+      sellsOnEcommerce: ynValue(preciseEcommerce),
+    },
+  };
+}
+
 async function submit() {
-  const description = descriptionEl.value.trim();
-  if (!description) {
-    descriptionEl.focus();
-    return;
+  const preciseActive = !preciseMode.hidden;
+  let body;
+
+  if (preciseActive) {
+    const validation = buildPrecisePayload();
+    if (validation.error) {
+      errorEl.textContent = validation.error;
+      errorEl.style.display = "block";
+      return;
+    }
+    body = validation.body;
+  } else {
+    const description = descriptionEl.value.trim();
+    if (!description) {
+      descriptionEl.focus();
+      return;
+    }
+    body = { description };
   }
 
   errorEl.style.display = "none";
@@ -162,7 +289,7 @@ async function submit() {
     const res = await fetch("/api/advise", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
 
@@ -171,6 +298,8 @@ async function submit() {
     }
 
     document.getElementById("summaryText").textContent = data.summary;
+    document.getElementById("fyBadge").textContent = data.financialYear ? `FY ${data.financialYear}` : "";
+    document.getElementById("disclaimerText").textContent = data.disclaimer;
     renderStatGrid(data);
     renderBenefits(data.benefits);
 
